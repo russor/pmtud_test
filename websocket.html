@@ -36,6 +36,7 @@
     var in_min = 68 - 40;
     var in_max = 0;
     var in_done = 0;
+    var later_mss = 0;
     var out_done = 0;
     var out_min = 0;
     var out_max = 9000;
@@ -138,7 +139,7 @@
                                     $('c2s_mss').textContent = mss;
                                     $('c2s_notes').textContent = "broken, larger packets dropped";
                                 }
-                                fetch("/size?in_mss=" + in_min + "&init_mss=" + init_mss +
+                                fetch("/size?in_mss=" + in_min + "&init_mss=" + init_mss + "&later_mss=" + later_mss +
                                       "&out_mss=" + out_min + "&late_responses=" + late_responses + "&timeouts=" + timeouts);
                             } else {
                                 client.send_probe();
@@ -191,6 +192,10 @@
                     if (mss > maxseg) { mss = maxseg; }
                     if (init_mss == 0) {
                         init_mss = maxseg;
+                        later_mss = maxseg;
+                    }
+                    if (maxseg < later_mss) {
+                        later_mss = maxseg;
                     }
                     if (maxseg < in_max || in_max == 0) {
                         in_max = maxseg;
