@@ -6,7 +6,109 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta charset="UTF-8">
   <link rel="icon" href="data:,">
-  <script type="application/javascript">
+  <style type='text/css'>
+    div.hidden { display: none; }
+    tr.hidden { display: none; }
+    table, th, td { border: 1px solid; border-collapse: collapse; }
+    #msgs { margin-left: 25px; margin-right: 25px; background-color: rgb(211, 211, 211); max-width: 500px;}
+  </style>
+
+</head>
+<body>
+  <h1>Path MTU Discovery Test</h1>
+  <div id="connect" class='hidden'>
+     <p>Press start to get started. Test results will be collected.
+     <input id='cA' class='button' type='submit' name='connect' value='start'/>
+     </p>
+  </div>
+  <noscript><p>To run the test, you need a browser with JavaScript, WebSockets, and the Fetch API</p></noscript>
+  </script>
+
+  <div id="results" class='hidden'><h2>Results</h2><table>
+    <tr><th>Direction</th><th>Tested Maximum Size Segment<th>Client Sent MSS<th>Notes</th>
+    <tr id="s2c" class='hidden'><td>Server to Client<td id="s2c_mss">&nbsp;<td id="s2c_init_mss">&nbsp;<td id="s2c_notes">&nbsp;
+    <tr id="c2s" class='hidden'><td>Client to Server<td id="c2s_mss">&nbsp;<td id="c2s_init_mss">(n/a)<td id="c2s_notes">&nbsp;
+  </table></div>
+  <div id="msgs"></div>
+
+  <h2>What is this?
+  <p>This test sends packets of varying sizes from the server to your
+  browser, and then from your browser to the server in order to check if
+  Path MTU Discovery (PMTUD) is working properly between your browser and this
+  server; which is hopefully indicative of your experience with PMTUD in
+  general.</p>
+  
+  <h2>How does it work?</h2>
+  <p>The first stage of the test sends varying size data packets from the
+  server to the browser, up to the Maxium Segment Size (MSS) sent by the
+  browser in the initial TCP SYN. There are three expected outcomes:
+  <ul>
+    <li>The MSS is correct, the browser can receive packets of the indicated
+    MSS; this server is limited to a MSS of 1460 (MTU 1500).  In this case,
+    you should have no trouble receiving large data packets in general.
+
+    <li>The MSS is not correct, but the network where there MSS is
+    restricted does properly send ICMP Fragmentation Needed reports about
+    packets that are too large.  In this case, you should not have trouble
+    receiving large data packets from servers (or peers) with properly
+    configured ICMP handling, but you may have trouble with servers which
+    don't have working ICMP.
+    
+    <li>The MSS is not correct, and ICMP Fragmentation Needed reports were
+    not received. In this case, you likely have trouble receiving large data
+    packets from many servers. However, some popular servers intentionally
+    use a lower MSS, and some others use probing techniques: probing may be
+    immediate or after a delay.
+  </uL>
+
+  <p>The second stage is the opposite; the browser sends varying size of
+  data packets to the server; packet control is less precise in this
+  direction, and browsers do not expose the MSS in the TCP SYN-ACK received
+  from the server. Again, there are three exepcted outcomes:
+  
+  <ul>
+    <li>The browser is able to send data of any size without delay. Either
+    the browser received a correct MSS, or the browser does immediate
+    probing. Measuring the sizes of incoming packets on the server could
+    distinguish between these two cases, but that's not possible with normal
+    sockets. In either case, you should have no trouble sending large data
+    packets.
+    
+    <li>The browser is able to send data packets up to a certain size
+    without delay, but larger streams are delayed until path probing begins
+    and the data is sent in sizes that are able to transit the network.  In
+    this case, you may notice some connections stall initially, but then
+    work fine. Repeated connections to the same server may work better, if
+    the server also sends large packets, receives ICMP Fragmentation Needed,
+    and runs a host cache that tracks that information; in that case, the
+    server will send a lower MSS in the SYN-ACK on connections that match
+    the host cache, and that will likely result in the browser sending
+    properly sized packets.  This (FreeBSD) server has sysctl
+    net.inet.tcp.hostcache.enable=0 to disable the host cache, as it interferes with
+    probing.
+    
+    <li>The browser is able to send data packets up to a certain size
+    without delay, but larger streams are not received.  Servers that
+    intentionally send a lower MSS will work fine, as long as the chosen MSS
+    is low enough; servers cannot initiate probing for this case. Often,
+    this case is visible through packet analysis on the server; smaller
+    packets from the client may come in fine, but MSS sized gaps often form
+    and are not filled in; reducing the MSS to affected networks could be
+    used to mitigate.
+  </ul>
+
+  <p>If the test completes, the summary data is sent to the server for
+  possible future analysis.  If the test doesn't complete, please <a
+  href="mailto:ptmud@enslaves.us">email me</a></p>
+  
+  <h2>Why isn't this HTTPS?</h2>
+  <p>Precise packet size control is required, and that's harder, but not impossible, to do with TLS encapsulation. Maybe later.</p>
+
+  <h3>Contact</h3>
+  <p><a href="mailto:ptmud@enslaves.us">email</a> welcome</p>
+  <p><a href="https://github.com/russor/pmtud_test">source code</a>
+
+  <script type='application/javascript'>
      var WS = false;
      if (window.WebSocket) WS = WebSocket;
      if (!WS && window.MozWebSocket) WS = MozWebSocket;
@@ -15,6 +117,9 @@
      }
      if (!fetch) {
          add_log("The Fetch API is not supported by this browser, the client to server packet size testing uses the Fetch API.");
+     }
+     if (!AbortSignal.timeout) {
+         add_log("The AbortSignal API is not supported by this browser, timed out requests might not be canceled.");
      }
 
     // Get an Element
@@ -108,9 +213,12 @@
           late_response = 0;
           this.timeout = setTimeout(timeout, client.rtt * 10);          
 
-          fetch("/size?" + "X".repeat(slug_size),
-            {signal: AbortSignal.timeout(client.rtt * 50),
-             method: "GET"})
+          var signal;
+          if (AbortSignal.timeout) {
+            signal = AbortSignal.timeout(client.rtt * 50);
+          }
+          
+          fetch("/size?" + "X".repeat(slug_size), {signal: signal, method: "GET"})
             .then((response) => {
                 if (response.ok) {
                     response.json().then((data) => {
@@ -251,112 +359,7 @@
           this._ws=null;
         }
     };
-  </script>
-  <style type='text/css'>
-    div.hidden { display: none; }
-    tr.hidden { display: none; }
-    table, th, td { border: 1px solid; border-collapse: collapse; }
-    #msgs { margin-left: 25px; margin-right: 25px; background-color: rgb(211, 211, 211); max-width: 500px;}
-  </style>
-
-</head>
-<body>
-  <h1>Path MTU Discovery Test</h1>
-  <div id="connect" class='hidden'>
-     <p>Press start to get started. Test results will be collected.
-     <input id='cA' class='button' type='submit' name='connect' value='start'/>
-     </p>
-  </div>
-  <noscript><p>To run the test, you need a browser with JavaScript, WebSockets, and the Fetch API</p></noscript>
-  <script type='application/javascript'>
     $('connect').className='';
-  </script>
-
-  <div id="results" class='hidden'><h2>Results</h2><table>
-    <tr><th>Direction</th><th>Tested Maximum Size Segment<th>Client Sent MSS<th>Notes</th>
-    <tr id="s2c" class='hidden'><td>Server to Client<td id="s2c_mss">&nbsp;<td id="s2c_init_mss">&nbsp;<td id="s2c_notes">&nbsp;
-    <tr id="c2s" class='hidden'><td>Client to Server<td id="c2s_mss">&nbsp;<td id="c2s_init_mss">(n/a)<td id="c2s_notes">&nbsp;
-  </table></div>
-  <div id="msgs"></div>
-
-  <h2>What is this?
-  <p>This test sends packets of varying sizes from the server to your
-  browser, and then from your browser to the server in order to check if
-  Path MTU Discovery (PMTUD) is working properly between your browser and this
-  server; which is hopefully indicative of your experience with PMTUD in
-  general.</p>
-  
-  <h2>How does it work?</h2>
-  <p>The first stage of the test sends varying size data packets from the
-  server to the browser, up to the Maxium Segment Size (MSS) sent by the
-  browser in the initial TCP SYN. There are three expected outcomes:
-  <ul>
-    <li>The MSS is correct, the browser can receive packets of the indicated
-    MSS; this server is limited to a MSS of 1460 (MTU 1500).  In this case,
-    you should have no trouble receiving large data packets in general.
-
-    <li>The MSS is not correct, but the network where there MSS is
-    restricted does properly send ICMP Fragmentation Needed reports about
-    packets that are too large.  In this case, you should not have trouble
-    receiving large data packets from servers (or peers) with properly
-    configured ICMP handling, but you may have trouble with servers which
-    don't have working ICMP.
-    
-    <li>The MSS is not correct, and ICMP Fragmentation Needed reports were
-    not received. In this case, you likely have trouble receiving large data
-    packets from many servers. However, some popular servers intentionally
-    use a lower MSS, and some others use probing techniques: probing may be
-    immediate or after a delay.
-  </uL>
-
-  <p>The second stage is the opposite; the browser sends varying size of
-  data packets to the server; packet control is less precise in this
-  direction, and browsers do not expose the MSS in the TCP SYN-ACK received
-  from the server. Again, there are three exepcted outcomes:
-  
-  <ul>
-    <li>The browser is able to send data of any size without delay. Either
-    the browser received a correct MSS, or the browser does immediate
-    probing. Measuring the sizes of incoming packets on the server could
-    distinguish between these two cases, but that's not possible with normal
-    sockets. In either case, you should have no trouble sending large data
-    packets.
-    
-    <li>The browser is able to send data packets up to a certain size
-    without delay, but larger streams are delayed until path probing begins
-    and the data is sent in sizes that are able to transit the network.  In
-    this case, you may notice some connections stall initially, but then
-    work fine. Repeated connections to the same server may work better, if
-    the server also sends large packets, receives ICMP Fragmentation Needed,
-    and runs a host cache that tracks that information; in that case, the
-    server will send a lower MSS in the SYN-ACK on connections that match
-    the host cache, and that will likely result in the browser sending
-    properly sized packets.  This (FreeBSD) server has sysctl
-    net.inet.tcp.hostcache.enable=0 to disable the host cache, as it interferes with
-    probing.
-    
-    <li>The browser is able to send data packets up to a certain size
-    without delay, but larger streams are not received.  Servers that
-    intentionally send a lower MSS will work fine, as long as the chosen MSS
-    is low enough; servers cannot initiate probing for this case. Often,
-    this case is visible through packet analysis on the server; smaller
-    packets from the client may come in fine, but MSS sized gaps often form
-    and are not filled in; reducing the MSS to affected networks could be
-    used to mitigate.
-  </ul>
-
-  <p>If the test completes, the summary data is sent to the server for
-  possible future analysis.  If the test doesn't complete, please <a
-  href="mailto:ptmud@enslaves.us">email me</a></p>
-  
-  <h2>Why isn't this HTTPS?</h2>
-  <p>Precise packet size control is required, and that's harder, but not impossible, to do with TLS encapsulation. Maybe later.</p>
-
-  <h3>Contact</h3>
-  <p><a href="mailto:ptmud@enslaves.us">email</a> welcome</p>
-  <p><a href="https://github.com/russor/pmtud_test">source code</a>
-
-  <script type='application/javascript'>
     $('cA').onclick = function(event) { client.connect(); return false; };
  </script>
   </body>
