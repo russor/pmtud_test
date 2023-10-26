@@ -118,7 +118,7 @@
      if (!fetch) {
          add_log("The Fetch API is not supported by this browser, the client to server packet size testing uses the Fetch API.");
      }
-     if (!AbortSignal.timeout) {
+     if (!AbortSignal || !AbortSignal.timeout) {
          add_log("The AbortSignal API is not supported by this browser, timed out requests might not be canceled.");
      }
 
@@ -214,7 +214,7 @@
           this.timeout = setTimeout(timeout, client.rtt * 10);          
 
           var signal;
-          if (AbortSignal.timeout) {
+          if (AbortSignal && AbortSignal.timeout) {
             signal = AbortSignal.timeout(client.rtt * 50);
           }
           
