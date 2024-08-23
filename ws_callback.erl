@@ -68,7 +68,7 @@ set_max_seg(Sock, Size) ->
 
 tcp_info(Sock) -> 
     {ok,[{raw,_,_,Info}]} = inet:getopts(Sock,[{raw,6,32,(2 + 31 + 26) * 8 }]),
-    % options translated from FreeBSD 13.1 /usr/include/netinet/tcp.h struct tcp_info
+    % options translated from FreeBSD 14.0 /usr/include/netinet/tcp.h struct tcp_info
     <<
         State:8/native,             %/* TCP FSM state. */
         __ca_state:8/native,
@@ -120,8 +120,8 @@ tcp_info(Sock) ->
         Rcv_ooopack:32/native,       %/* Out-of-order packets */
         Snd_zerowin:32/native,       %/* Zero-sized windows sent */
 
-        %/* Padding to grow without breaking ABI. */
-        __tcpi_pad:(26 * 4)/binary         %/* Padding. */
+        %/* fields added later and padding */
+        _Rest/binary
     >> = Info,
     #{state => State, options => Options, snd_wscale => Snd_wscale, rcv_wscale => Rcv_wscale,
       rto => Rto, snd_mss => Snd_mss, rcv_mss => Rcv_mss, last_data_recv => Last_data_recv,
