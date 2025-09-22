@@ -8,4 +8,4 @@ reload: $(ERLANG_OBJS)
 	yaws --load $(ERLANG_NAMES)
 
 %.beam: %.erl
-	erlc -I /usr/local/lib/erlang/lib/yaws-2.1.0/include/ $<
+	erlc -I /usr/local/lib/erlang/lib/yaws-2.2.0/include/ $<
