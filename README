@@ -2,7 +2,7 @@ Path MTU Discovery test site
 
 See it live at http://pmtud.enslaves.us/
 
-Developed on FreeBSD-13.1-RELEASE, with yaws 2.1.0
+Deployed on FreeBSD-14.3-RELEASE, with yaws 2.2.0
 
 You'd need to adjust yaws.conf for IPs
 
