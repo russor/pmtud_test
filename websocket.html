@@ -25,8 +25,10 @@
 
   <div id="results" class='hidden'><h2>Results</h2><table>
     <tr><th>Direction</th><th>Tested Maximum Size Segment<th>Client Sent MSS<th>Notes</th>
-    <tr id="s2c" class='hidden'><td>Server to Client<td id="s2c_mss">&nbsp;<td id="s2c_init_mss">&nbsp;<td id="s2c_notes">&nbsp;
-    <tr id="c2s" class='hidden'><td>Client to Server<td id="c2s_mss">&nbsp;<td id="c2s_init_mss">(n/a)<td id="c2s_notes">&nbsp;
+    <tr id="s2c4" class='hidden'><td>Server to Client IPv4<td id="s2c4_mss">&nbsp;<td id="s2c4_init_mss">&nbsp;<td id="s2c4_notes">&nbsp;
+    <tr id="c2s4" class='hidden'><td>Client to Server IPv4<td id="c2s4_mss">&nbsp;<td id="c2s4_init_mss">(n/a)<td id="c2s4_notes">&nbsp;
+    <tr id="s2c6" class='hidden'><td>Server to Client IPv6<td id="s2c6_mss">&nbsp;<td id="s2c6_init_mss">&nbsp;<td id="s2c6_notes">&nbsp;
+    <tr id="c2s6" class='hidden'><td>Client to Server IPv6<td id="c2s6_mss">&nbsp;<td id="c2s6_init_mss">(n/a)<td id="c2s6_notes">&nbsp;
   </table></div>
   <div id="msgs"></div>
 
@@ -43,8 +45,9 @@
   browser in the initial TCP SYN. There are three expected outcomes:
   <ul>
     <li>The MSS is correct, the browser can receive packets of the indicated
-    MSS; this server is limited to a MSS of 1460 (MTU 1500).  In this case,
-    you should have no trouble receiving large data packets in general.
+    MSS; this server is limited to a MSS of 1460 for IPv4 and 1440 for IPv6
+    (MTU 1500). In this case, you should have no trouble receiving large
+    data packets in general.
 
     <li>The MSS is not correct, but the network where there MSS is
     restricted does properly send ICMP Fragmentation Needed reports about
@@ -105,9 +108,7 @@
 
   <h2>What about IPv6?</h2>
 
-  <p>Coming soon.  As of September 2025, I now have access to a network with
-  MTU 1500 IPv6; once I figure out some issues with neighbor discovery, it
-  should be a good place to run an additional test.</p>
+  <p>An IPv6 test runs immediately after the IPv4 test finishes.</p>
 
   <h3>Contact</h3>
   <p><a href="mailto:ptmud@enslaves.us">email</a> welcome</p>
@@ -156,6 +157,7 @@
     var late_response = 0;
     var late_responses = 0;
     var timeouts = 0;
+    var version = "";
     
     function timeout() { return client._timeout(); }
     function next_size(min, max) {
@@ -181,9 +183,23 @@
     
     var client = {
         connect: function(){
+         init_mss = 0;
+         in_min = 68 - 40;
+         in_max = 0;
+         in_done = 0;
+         later_mss = 0;
+         out_done = 0;
+         out_min = 0;
+         out_max = 9000;
+         probe_size = 0;
+         packet_offset = 0;
+         slug_size = 0;
+         late_response = 0;
+         late_responses = 0;
+         timeouts = 0;
          this.start = Date.now();
          this.rtt = 0;
-         this._ws=new WS("ws://" + window.location.host + "/ws");
+         this._ws=new WS("ws://ipv" + version + "." + window.location.host + "/ws");
          this._ws.binaryType = "arraybuffer";
          this._ws.onopen=this._onopen;
          this._ws.onmessage=this._onmessage;
@@ -192,7 +208,6 @@
            clearTimeout(this.timeout);
          }
          this.timeout = undefined;
-         //$('msgs').innerHTML='';
         },
         _onopen: function(){
           client.rtt = Date.now() - client.start;
@@ -223,7 +238,7 @@
             signal = AbortSignal.timeout(client.rtt * 50);
           }
           
-          fetch("/size?" + "X".repeat(slug_size), {signal: signal, method: "GET"})
+          fetch("http://ipv" + version + "." + window.location.host + "/size?" + "X".repeat(slug_size), {signal: signal, method: "GET"})
             .then((response) => {
                 if (response.ok) {
                     response.json().then((data) => {
@@ -243,17 +258,22 @@
                             if (out_min >= out_max) {
                                 add_log("finished out probing, maximum mss " + mss);
                                 if (out_max == 9000) {
-                                    $('c2s_mss').textContent = "unlimited";
-                                    $('c2s_notes').textContent = "OK";
+                                    $("c2s" + version + '_mss').textContent = "unlimited";
+                                    $("c2s" + version + '_notes').textContent = "OK";
                                 } else if (late_responses == timeouts) {
-                                    $('c2s_mss').textContent = mss;
-                                    $('c2s_notes').textContent = "not ideal, larger packets delayed";
+                                    $("c2s" + version + '_mss').textContent = mss;
+                                    $("c2s" + version + '_notes').textContent = "not ideal, larger packets delayed";
                                 } else {
-                                    $('c2s_mss').textContent = mss;
-                                    $('c2s_notes').textContent = "broken, larger packets dropped";
+                                    $("c2s" + version + '_mss').textContent = mss;
+                                    $("c2s" + version + '_notes').textContent = "broken, larger packets dropped";
                                 }
-                                fetch("/size?in_mss=" + in_min + "&init_mss=" + init_mss + "&later_mss=" + later_mss +
+                                fetch("/size?version=" + version + "&in_mss=" + in_min + "&init_mss=" + init_mss + "&later_mss=" + later_mss +
                                       "&out_mss=" + out_min + "&late_responses=" + late_responses + "&timeouts=" + timeouts);
+
+                                if (version == "4") {
+                                    version = "6";
+                                    client.connect();
+                                }
                             } else {
                                 client.send_probe();
                             }
@@ -319,20 +339,20 @@
                         if (in_done) {
                             add_log("finished in probing, maximum mss " + mss + " peer mss " + maxseg + " initial peer mss " + init_mss);
                             if (init_mss == maxseg && maxseg == mss) {
-                                $('s2c_mss').textContent = mss;
-                                $('s2c_notes').textContent = "OK";
+                                $("s2c" + version + '_mss').textContent = mss;
+                                $("s2c" + version + '_notes').textContent = "OK";
                             } else if (mss == maxseg) {
-                                $('s2c_mss').textContent = mss;
-                                $('s2c_notes').textContent = "fragile, relies on ICMP or server help";
+                                $("s2c" + version + '_mss').textContent = mss;
+                                $("s2c" + version + '_notes').textContent = "fragile, relies on ICMP or server help";
                             } else {
-                                $('s2c_mss').textContent = mss;
-                                $('s2c_notes').textContent = "broken, ICMPs not received, requires server help";
+                                $("s2c" + version + '_mss').textContent = mss;
+                                $("s2c" + version + '_notes').textContent = "broken, ICMPs not received, requires server help";
                             }
-                            $('s2c_init_mss').textContent = init_mss;
+                            $("s2c" + version + '_init_mss').textContent = init_mss;
                             $('results').className='';
-                            $('c2s_mss').textContent = 'PENDING ...';
-                            $('s2c').className='';
-                            $('c2s').className='';
+                            $("c2s" + version + '_mss').textContent = 'PENDING ...';
+                            $("s2c" + version).className='';
+                            $("c2s" + version).className='';
                             
                             in_done = 2;
                             client.send_probe();
@@ -365,7 +385,7 @@
         }
     };
     $('connect').className='';
-    $('cA').onclick = function(event) { client.connect(); return false; };
+    $('cA').onclick = function(event) { version = "4"; client.connect(); return false; };
  </script>
   </body>
 </html>

@@ -9,9 +9,20 @@
 -export([tcp_info/1, set_max_seg/2]).
 -export([out/1]).
 
-out(A) -> {websocket, ws_callback, [
-	{origin, "http://" ++ (A#arg.headers)#headers.host}
-]}.
+out(A) ->
+	Host = (A#arg.headers)#headers.host,
+	OriginHost = case yaws_api:parse_url(yaws_api:get_header(A#arg.headers, "origin")) of
+		U when is_record(U, url) -> U#url.host;
+		_ -> "example.org"
+	end,
+	AllowedOriginHost = case Host of
+		"ipv4." ++ OriginHost -> OriginHost;
+		"ipv6." ++ OriginHost -> OriginHost;
+		_ -> Host
+	end,
+	{websocket, ws_callback, [
+		{origin, "http://" ++ AllowedOriginHost}
+	]}.
 
 -record(state, {wsstate, has_timestamps}).
 

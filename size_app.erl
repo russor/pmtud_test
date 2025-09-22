@@ -13,6 +13,6 @@ out(#arg{clisock = Sock}) ->
 	end,
 
 	[{header, {connection, "close"}},
-	 %{header, {"access-control-allow-origin", "http://ruka.org"}},
+	 {header, {"access-control-allow-origin", "http://pmtud.enslaves.us"}},
 	 {content, "application/json", io_lib:format("{\"size\":~p}", [ReportedSize])}
 	].
