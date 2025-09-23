@@ -158,6 +158,7 @@
     var late_responses = 0;
     var timeouts = 0;
     var version = "";
+    var err_count = 0;
     
     function timeout() { return client._timeout(); }
     function next_size(min, max) {
@@ -197,6 +198,8 @@
          late_response = 0;
          late_responses = 0;
          timeouts = 0;
+         err_count = 0;
+
          this.start = Date.now();
          this.rtt = 0;
          this._ws=new WS("ws://ipv" + version + "." + window.location.host + "/ws");
@@ -284,7 +287,15 @@
                     console.log(response);
                 }
             }).catch((err) => {
-                client.send_probe();
+                err_count += 1;
+                add_log("caught error");
+                console.log(err);
+                if (err_count < 10) {
+                  add_log("caught error, retrying");
+                  client.send_probe();
+                } else {
+                  add_log("caught error, ending test");
+                }
             });
         },
         _timeout: function() {
