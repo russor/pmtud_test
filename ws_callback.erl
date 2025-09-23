@@ -6,23 +6,23 @@
 
 %% Export for websocket callbacks
 -export([init/1, terminate/2, handle_open/2, handle_message/2, handle_info/2]).
--export([tcp_info/1, set_max_seg/2]).
+-export([tcp_info/1, set_max_seg/2, allowed_origin/1]).
 -export([out/1]).
 
-out(A) ->
-	Host = (A#arg.headers)#headers.host,
-	OriginHost = case yaws_api:parse_url(yaws_api:get_header(A#arg.headers, "origin")) of
+allowed_origin(#arg{headers = Headers}) ->
+	Host = Headers#headers.host,
+	OriginHost = case yaws_api:parse_url(yaws_api:get_header(Headers, "origin")) of
 		U when is_record(U, url) -> U#url.host;
 		_ -> "example.org"
 	end,
-	AllowedOriginHost = case Host of
+	case Host of
 		"ipv4." ++ OriginHost -> OriginHost;
 		"ipv6." ++ OriginHost -> OriginHost;
 		_ -> Host
-	end,
-	{websocket, ws_callback, [
-		{origin, "http://" ++ AllowedOriginHost}
-	]}.
+	end.
+
+out(A) ->
+	{websocket, ws_callback, [{origin, "http://" ++ allowed_origin(A)}]}.
 
 -record(state, {wsstate, has_timestamps}).
 

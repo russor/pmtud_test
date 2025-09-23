@@ -4,7 +4,7 @@
 
 -export ([out/1]).
 
-out(#arg{clisock = Sock}) ->
+out(A = #arg{clisock = Sock}) ->
 	{ok, [{_, Size}]} = inet:getstat(Sock, [recv_oct]),
 	TcpInfo = ws_callback:tcp_info(Sock),
 	ReportedSize = case (maps:get(options, TcpInfo) band 1) == 1 of
@@ -13,6 +13,6 @@ out(#arg{clisock = Sock}) ->
 	end,
 
 	[{header, {connection, "close"}},
-	 {header, {"access-control-allow-origin", "http://pmtud.enslaves.us"}},
+	 {header, {"access-control-allow-origin", "http://" ++ ws_callback:allowed_origin(A)}},
 	 {content, "application/json", io_lib:format("{\"size\":~p}", [ReportedSize])}
 	].
