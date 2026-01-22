@@ -11,7 +11,11 @@
 
 allowed_origin(#arg{headers = Headers}) ->
 	Host = Headers#headers.host,
-	OriginHost = case yaws_api:parse_url(yaws_api:get_header(Headers, "origin")) of
+	Origin = case yaws_api:get_header(Headers, "origin") of
+		undefined -> "http://example.org";
+		O -> O
+	end,
+	OriginHost = case yaws_api:parse_url(Origin) of
 		U when is_record(U, url) -> U#url.host;
 		_ -> "example.org"
 	end,
