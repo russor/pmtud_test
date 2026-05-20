@@ -10,7 +10,7 @@
     div.hidden { display: none; }
     tr.hidden { display: none; }
     table, th, td { border: 1px solid; border-collapse: collapse; }
-    #msgs { margin-left: 25px; margin-right: 25px; background-color: rgb(211, 211, 211); max-width: 500px;}
+    #msgs { margin-left: 25px; margin-right: 25px; background-color: rgb(211, 211, 211); max-width: 550px;}
   </style>
 
 </head>
@@ -32,7 +32,7 @@
   </table></div>
   <div id="msgs"></div>
 
-  <h2>What is this?
+  <h2>What is this?</h2>
   <p>This test sends packets of varying sizes from the server to your
   browser, and then from your browser to the server in order to check if
   Path MTU Discovery (PMTUD) is working properly between your browser and this
@@ -49,8 +49,8 @@
     (MTU 1500). In this case, you should have no trouble receiving large
     data packets in general.
 
-    <li>The MSS is not correct, but the network where there MSS is
-    restricted does properly send ICMP Fragmentation Needed reports about
+    <li>The MSS is not correct, but the network where the MSS is
+    restricted properly sends ICMP Fragmentation Needed reports about
     packets that are too large.  In this case, you should not have trouble
     receiving large data packets from servers (or peers) with properly
     configured ICMP handling, but you may have trouble with servers which
@@ -63,10 +63,11 @@
     immediate or after a delay.
   </uL>
 
-  <p>The second stage is the opposite; the browser sends varying size of
-  data packets to the server; packet control is less precise in this
-  direction, and browsers do not expose the MSS in the TCP SYN-ACK received
-  from the server. Again, there are three exepcted outcomes:
+  <p>The second stage tests in the opposite direction; the browser sends
+  varying size of data packets to the server; packet control in this
+  direction is less precise, and browsers do not expose the MSS in the TCP
+  SYN-ACK received from the server.  Again, there are three exepcted
+  outcomes:
   
   <ul>
     <li>The browser is able to send data of any size without delay. Either
@@ -92,9 +93,9 @@
     <li>The browser is able to send data packets up to a certain size
     without delay, but larger streams are not received.  Servers that
     intentionally send a lower MSS will work fine, as long as the chosen MSS
-    is low enough; servers cannot initiate probing for this case. Often,
-    this case is visible through packet analysis on the server; smaller
-    packets from the client may come in fine, but MSS sized gaps often form
+    is low enough; servers cannot initiate probing for this case.  This case
+    may be visible through packet analysis on the server; smaller packets
+    from the client will likely come in fine, but MSS sized gaps often form
     and are not filled in; reducing the MSS to affected networks could be
     used to mitigate.
   </ul>
@@ -143,6 +144,16 @@
             //msg.scrollTop = msg.scrollHeight - msg.clientHeight;
     }
     
+    function mss_text(mss, version) {
+            if (version == 4) {
+                   return mss + " (MTU " + (mss + 40) + ")";
+            } else if (version == 6) {
+                   return mss + " (MTU " + (mss + 60) + ")";
+            } else {
+                   return mss;
+            }
+    }
+
     var init_mss = 0;
     var in_min = 68 - 40;
     var in_max = 0;
@@ -248,7 +259,7 @@
                         if (late_response) {
                             ++late_responses;
                             var mss = data.size;
-                            add_log("got late out probe for mss " + mss + " target " + probe_size);
+                            add_log("got late client to server probe for mss " + mss + " target " + probe_size);
                             packet_offset = mss - slug_size;
                             client.send_probe();
                         } else {
@@ -256,18 +267,18 @@
                             var mss = data.size;
                             packet_offset = mss - slug_size;
                             
-                            add_log("got out probe for mss " + mss);
+                            add_log("got client to server probe for mss " + mss);
                             out_min = mss;
                             if (out_min >= out_max) {
-                                add_log("finished out probing, maximum mss " + mss);
+                                add_log("finished c2s" + version + " probing, maximum mss " + mss);
                                 if (out_max == 9000) {
                                     $("c2s" + version + '_mss').textContent = "unlimited";
                                     $("c2s" + version + '_notes').textContent = "OK";
                                 } else if (late_responses == timeouts) {
-                                    $("c2s" + version + '_mss').textContent = mss;
+                                    $("c2s" + version + '_mss').textContent = mss_text(mss, version);
                                     $("c2s" + version + '_notes').textContent = "not ideal, larger packets delayed";
                                 } else {
-                                    $("c2s" + version + '_mss').textContent = mss;
+                                    $("c2s" + version + '_mss').textContent = mss_text(mss, version);
                                     $("c2s" + version + '_notes').textContent = "broken, larger packets dropped";
                                 }
                                 fetch("/size?version=" + version + "&in_mss=" + in_min + "&init_mss=" + init_mss + "&later_mss=" + later_mss +
@@ -309,7 +320,7 @@
                 add_log("can't continue probing");
               }
           } else {
-              add_log("out probe timed out " + probe_size + " min " + out_min + " max " + out_max);
+              add_log("client to server probe timed out " + probe_size + " min " + out_min + " max " + out_max);
               late_response = 1;
               ++timeouts;
               out_max = probe_size - 1;
@@ -332,7 +343,7 @@
                     //packet_offset = view.getInt8(1);
                     var maxseg = view.getInt16(2);
                     var mss = view.getInt16(4);
-                    add_log("got in probe for mss " + mss + " (max seg " + maxseg + ")");
+                    add_log("got server to client probe for mss " + mss + " (max seg " + maxseg + ")");
                     if (mss > maxseg) { mss = maxseg; }
                     if (init_mss == 0) {
                         init_mss = maxseg;
@@ -348,18 +359,18 @@
                     in_min = mss;
                     if (in_min == in_max) {
                         if (in_done) {
-                            add_log("finished in probing, maximum mss " + mss + " peer mss " + maxseg + " initial peer mss " + init_mss);
+                            add_log("finished s2c" + version + " probing, maximum mss " + mss + " peer mss " + maxseg + " initial peer mss " + init_mss);
                             if (init_mss == maxseg && maxseg == mss) {
-                                $("s2c" + version + '_mss').textContent = mss;
+                                $("s2c" + version + '_mss').textContent = mss_text(mss, version);
                                 $("s2c" + version + '_notes').textContent = "OK";
                             } else if (mss == maxseg) {
-                                $("s2c" + version + '_mss').textContent = mss;
+                                $("s2c" + version + '_mss').textContent = mss_text(mss, version);
                                 $("s2c" + version + '_notes').textContent = "fragile, relies on ICMP or server help";
                             } else {
-                                $("s2c" + version + '_mss').textContent = mss;
+                                $("s2c" + version + '_mss').textContent = mss_text(mss, version);
                                 $("s2c" + version + '_notes').textContent = "broken, ICMPs not received, requires server help";
                             }
-                            $("s2c" + version + '_init_mss').textContent = init_mss;
+                            $("s2c" + version + '_init_mss').textContent = mss_text(init_mss, version);
                             $('results').className='';
                             $("c2s" + version + '_mss').textContent = 'PENDING ...';
                             $("s2c" + version).className='';
