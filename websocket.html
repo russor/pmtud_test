@@ -155,13 +155,13 @@
     }
 
     var init_mss = 0;
-    var in_min = 68 - 40;
-    var in_max = 0;
-    var in_done = 0;
+    var s2c_min = 68 - 40;
+    var s2c_max = 0;
+    var s2c_done = 0;
     var later_mss = 0;
-    var out_done = 0;
-    var out_min = 0;
-    var out_max = 9000;
+    var c2s_done = 0;
+    var c2s_min = 0;
+    var c2s_max = 9000;
     var probe_size = 0;
     var packet_offset = 0;
     var slug_size = 0;
@@ -171,22 +171,23 @@
     var version = "";
     var err_count = 0;
     
-    function timeout() { return client._timeout(); }
+    function timeout_c2s() { return client._timeout_c2s(); }
+    function timeout_s2c() { return client._timeout_s2c(); }
     function next_size(min, max) {
       if (max == 0) { return 576 - 40; }
       if (min == max) { return min;}
       var candidate = Math.max(min + 1, min + Math.trunc((max - min) / 2));
       // speed up probing by jumping to probable guesses
-      if (!in_done) {
+      if (!s2c_done) {
           if (min < init_mss && max >= init_mss) {
               candidate = init_mss;
           }
       } else {
-          if (min < in_max && candidate > in_max) {
-              candidate = in_max + 1;
-          } else if (min < in_max && max <= in_max) {
-              candidate = in_max;
-          } else if (min > in_max && max == 9000) {
+          if (min < s2c_max && candidate > s2c_max) {
+              candidate = s2c_max + 1;
+          } else if (min < s2c_max && max <= s2c_max) {
+              candidate = s2c_max;
+          } else if (min > s2c_max && max == 9000) {
               candidate = 9000;
           }
       }
@@ -194,15 +195,14 @@
     }
     
     var client = {
-        connect: function(){
+        connect: function(s2c_max){
          init_mss = 0;
-         in_min = 68 - 40;
-         in_max = 0;
-         in_done = 0;
+         s2c_min = 68 - 40;
+         s2c_done = 0;
          later_mss = 0;
-         out_done = 0;
-         out_min = 0;
-         out_max = 9000;
+         c2s_done = 0;
+         c2s_min = 0;
+         c2s_max = 9000;
          probe_size = 0;
          packet_offset = 0;
          slug_size = 0;
@@ -231,21 +231,21 @@
         probe_req: function() {
           var buf = new ArrayBuffer(3);
           var view = new DataView(buf);
-          probe_size = next_size(in_min, in_max);
+          probe_size = next_size(s2c_min, s2c_max);
           view.setInt8(0, 1);
           view.setInt16(1, probe_size);
           client._send(buf);
-          this.timeout = setTimeout(timeout, client.rtt * 10);
+          this.timeout = setTimeout(timeout_s2c, client.rtt * 10);
         },
         send_probe: function() {
-          probe_size = next_size(out_min, out_max);
+          probe_size = next_size(c2s_min, c2s_max);
           slug_size = probe_size - packet_offset;
           if (packet_offset == 0 || slug_size < 0) {
               slug_size = 0;
           }
             
           late_response = 0;
-          this.timeout = setTimeout(timeout, client.rtt * 10);          
+          this.timeout = setTimeout(timeout_c2s, client.rtt * 10);
 
           var signal;
           if (AbortSignal && AbortSignal.timeout) {
@@ -268,10 +268,10 @@
                             packet_offset = mss - slug_size;
                             
                             add_log("got client to server probe for mss " + mss);
-                            out_min = mss;
-                            if (out_min >= out_max) {
+                            c2s_min = mss;
+                            if (c2s_min >= c2s_max) {
                                 add_log("finished c2s" + version + " probing, maximum mss " + mss);
-                                if (out_max == 9000) {
+                                if (c2s_max == 9000) {
                                     $("c2s" + version + '_mss').textContent = "unlimited";
                                     $("c2s" + version + '_notes').textContent = "OK";
                                 } else if (late_responses == timeouts) {
@@ -281,12 +281,12 @@
                                     $("c2s" + version + '_mss').textContent = mss_text(mss, version);
                                     $("c2s" + version + '_notes').textContent = "broken, larger packets dropped";
                                 }
-                                fetch("/size?version=" + version + "&in_mss=" + in_min + "&init_mss=" + init_mss + "&later_mss=" + later_mss +
-                                      "&out_mss=" + out_min + "&late_responses=" + late_responses + "&timeouts=" + timeouts);
+                                fetch("/size?version=" + version + "&s2c_mss=" + s2c_min + "&init_mss=" + init_mss + "&later_mss=" + later_mss +
+                                      "&c2s_mss=" + c2s_min + "&late_responses=" + late_responses + "&timeouts=" + timeouts);
 
                                 if (version == "4") {
                                     version = "6";
-                                    client.connect();
+                                    client.connect(0);
                                 }
                             } else {
                                 client.send_probe();
@@ -309,22 +309,21 @@
                 }
             });
         },
-        _timeout: function() {
-          if (in_done != 2) {
-              add_log("in probe timed out " + probe_size + " min " + in_min + " max " + in_max);
-              in_max = probe_size - 1;
-              if (in_max >= in_min) {
-                this._ws.close();
-                client.connect();
-              } else {
-                add_log("can't continue probing");
-              }
+        _timeout_s2c: function() {
+          add_log("server to client probe timed out " + probe_size + " min " + s2c_min + " max " + s2c_max);
+          s2c_max = probe_size - 1;
+          if (s2c_max >= s2c_min) {
+            this._ws.close();
+            client.connect(s2c_max);
           } else {
-              add_log("client to server probe timed out " + probe_size + " min " + out_min + " max " + out_max);
-              late_response = 1;
-              ++timeouts;
-              out_max = probe_size - 1;
+            add_log("can't continue probing");
           }
+       },
+       _timeout_c2s: function() {
+          add_log("client to server probe timed out " + probe_size + " min " + c2s_min + " max " + c2s_max);
+          late_response = 1;
+          ++timeouts;
+          c2s_max = probe_size - 1;
         },
         _send: function(message){
            if (this._ws)
@@ -352,13 +351,13 @@
                     if (maxseg < later_mss) {
                         later_mss = maxseg;
                     }
-                    if (maxseg < in_max || in_max == 0) {
-                        in_max = maxseg;
-                        in_done = 0;
+                    if (maxseg < s2c_max || s2c_max == 0) {
+                        s2c_max = maxseg;
+                        s2c_done = 0;
                     }
-                    in_min = mss;
-                    if (in_min == in_max) {
-                        if (in_done) {
+                    s2c_min = mss;
+                    if (s2c_min == s2c_max) {
+                        if (s2c_done) {
                             add_log("finished s2c" + version + " probing, maximum mss " + mss + " peer mss " + maxseg + " initial peer mss " + init_mss);
                             if (init_mss == maxseg && maxseg == mss) {
                                 $("s2c" + version + '_mss').textContent = mss_text(mss, version);
@@ -376,11 +375,11 @@
                             $("s2c" + version).className='';
                             $("c2s" + version).className='';
                             
-                            in_done = 2;
+                            s2c_done = 2;
                             client.send_probe();
                             client._ws.close();
-                        } else if (!in_done) {
-                            in_done = 1;
+                        } else if (!s2c_done) {
+                            s2c_done = 1;
                             client.probe_req();
                         }
                     } else {
@@ -407,7 +406,7 @@
         }
     };
     $('connect').className='';
-    $('cA').onclick = function(event) { version = "4"; client.connect(); return false; };
+    $('cA').onclick = function(event) { version = "4"; client.connect(0); return false; };
  </script>
   </body>
 </html>
