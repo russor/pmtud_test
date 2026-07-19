@@ -195,7 +195,7 @@
     }
     
     var client = {
-        connect: function(s2c_max){
+        connect: function(){
          init_mss = 0;
          s2c_min = 68 - 40;
          s2c_done = 0;
@@ -286,7 +286,8 @@
 
                                 if (version == "4") {
                                     version = "6";
-                                    client.connect(0);
+                                    s2c_max=0;
+                                    client.connect();
                                 }
                             } else {
                                 client.send_probe();
@@ -314,7 +315,7 @@
           s2c_max = probe_size - 1;
           if (s2c_max >= s2c_min) {
             this._ws.close();
-            client.connect(s2c_max);
+            client.connect();
           } else {
             add_log("can't continue probing");
           }
@@ -406,7 +407,11 @@
         }
     };
     $('connect').className='';
-    $('cA').onclick = function(event) { version = "4"; client.connect(0); return false; };
+    $('cA').onclick = function(event) {
+        version = "4";
+        client.connect();
+        return false;
+    };
  </script>
   </body>
 </html>
